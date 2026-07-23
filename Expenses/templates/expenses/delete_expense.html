@@ -1,0 +1,16 @@
+{% extends 'expenses/base.html' %}
+
+{% block content %}
+<div style="max-width: 450px; margin: 4rem auto; text-align: center;" class="form-section">
+    <h2>Confirm Deletion</h2>
+    <p style="margin: 1.5rem 0;">Are you sure you want to delete <strong>"{{ transaction.title }}"</strong> (${{ transaction.amount }})?</p>
+    
+    <form method="POST">
+        {% csrf_token %}
+        <div style="display: flex; gap: 1rem; justify-content: center; margin-top: 1.5rem;">
+            <button type="submit" class="btn-danger" style="width: auto; padding: 0.75rem 1.5rem;">Yes, Delete</button>
+            <a href="{% url 'dashboard' %}" class="btn-primary" style="background: #6c757d; width: auto; padding: 0.75rem 1.5rem; text-decoration: none;">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

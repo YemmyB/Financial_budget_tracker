@@ -1,0 +1,17 @@
+{% extends 'expenses/base.html' %}
+
+{% block content %}
+<div style="max-width: 400px; margin: 4rem auto;" class="form-section">
+    <h2 style="text-align: center; margin-bottom: 1.5rem; color: #2c3e50;">Create Account</h2>
+    
+    <form method="POST">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit" class="btn-primary" style="margin-top: 1rem;">Sign Up</button>
+    </form>
+    
+    <p style="text-align: center; margin-top: 1.5rem;">
+        Already have an account? <a href="{% url 'login' %}">Login here</a>.
+    </p>
+</div>
+{% endblock %}
