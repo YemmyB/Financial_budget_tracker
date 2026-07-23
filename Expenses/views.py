@@ -12,6 +12,44 @@ from django.db.models import Sum
 from django.contrib.auth.decorators import login_required
 from .models import Transaction, Category
 from .forms import TransactionForm
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import render, redirect
+import json
+from .utils import parse_mpesa_sms
+
+@login_required
+def manual_sms_sync(request):
+    """View providing a web dashboard input box to paste and sync M-Pesa SMS strings."""
+    message = None
+    if request.method == 'POST':
+        sms_text = request.POST.get('sms_text', '')
+        success, message = parse_mpesa_sms(sms_text, request.user)
+        if success:
+            return redirect('dashboard')
+            
+    return render(request, 'expenses/manual_sync.html', {'message': message})
+
+@csrf_exempt
+def api_mpesa_sync(request):
+    """API Endpoint for external webhooks."""
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            sms_text = data.get('sms', '')
+            # For API webhooks, assign to a default system user or extract via token
+            from django.contrib.auth.models import User
+            user = User.objects.first() # Adjust based on your auth strategy
+            
+            success, msg = parse_mpesa_sms(sms_text, user)
+            if success:
+                return JsonResponse({'status': 'success', 'message': msg}, status=200)
+            return JsonResponse({'status': 'error', 'message': msg}, status=400)
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
+            
+    return JsonResponse({'error': 'Invalid method'}, status=405)
 
 def register(request):
     if request.method == 'POST':

@@ -10,4 +10,6 @@ urlpatterns = [
     path('register/', views.register, name='register'),
     # Add the webhook URL:
     path('api/mpesa-sync/', views.mpesa_webhook, name='mpesa_webhook'),
+    path('sync-sms/', views.manual_sms_sync, name='manual_sms_sync'),
+    path('api/mpesa-sync/', views.api_mpesa_sync, name='api_mpesa_sync'),
 ]
