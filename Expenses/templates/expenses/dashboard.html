@@ -1,104 +1,121 @@
 {% extends 'expenses/base.html' %}
 
 {% block content %}
-    <h1>Financial Dashboard</h1>
+<div style="max-width: 1000px; margin: 2rem auto; padding: 1rem;">
+    <h2>Financial Dashboard</h2>
 
-    <!-- 1. Summary Cards -->
-    <div class="grid">
-        <div class="card">
-            <h3>Net Balance</h3>
-            <h2>${{ balance }}</h2>
-        </div>
-        <div class="card">
-            <h3>Total Income</h3>
-            <h2 class="text-green">+${{ income }}</h2>
-        </div>
-        <div class="card">
-            <h3>Total Expenses</h3>
-            <h2 class="text-red">-${{ expenses }}</h2>
-        </div>
-    </div>
-
-    <!-- 2. Chart.js Breakdown -->
-    <div style="background: white; padding: 1.5rem; border-radius: 8px; border: 1px solid #e1e8ed; margin-bottom: 2rem; max-width: 450px; margin-left: auto; margin-right: auto;">
-        <h3 style="text-align: center; margin-top: 0;">Expenses Breakdown</h3>
-        <canvas id="expenseChart"></canvas>
-    </div>
-
-    <!-- 3. Transactions Section Header & Month Filter -->
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 2rem; margin-bottom: 1rem;">
-        <h3 style="margin: 0;">Transactions</h3>
-        <a href="{% url 'add_expense' %}" class="btn-primary" style="width: auto; padding: 0.5rem 1rem; font-size: 0.9rem;">+ Add New</a>
-    </div>
-
-    <div style="margin-bottom: 1rem;">
-        <form method="GET" style="display: flex; align-items: center; gap: 0.5rem;">
-            <label for="month-filter" style="font-weight: bold; color: #495057;">Filter Month:</label>
-            <input type="month" id="month-filter" name="month" value="{{ current_month_value }}" onchange="this.form.submit()" style="width: auto; padding: 0.4rem;">
+    <!-- Month Filter Form -->
+    <div style="margin-bottom: 1.5rem; background: white; padding: 1rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+        <form method="GET" style="display: flex; gap: 1rem; align-items: center;">
+            <label for="month" style="font-weight: bold;">Filter by Month:</label>
+            <input type="month" id="month" name="month" value="{{ current_month_value }}" style="padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;">
+            <button type="submit" style="padding: 0.5rem 1rem; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">Filter</button>
+            <a href="{% url 'dashboard' %}" style="text-decoration: none; color: #666; margin-left: 1rem;">Reset</a>
         </form>
     </div>
 
-    <!-- 4. Transactions Table -->
-    <table>
-    <thead>
-        <tr>
-            <th>Date</th>
-            <th>Description / Title</th>
-            <th>Amount</th>
-            <th>Category (Select to Classify)</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for t in transactions %}
-        <tr>
-            <td>{{ t.date }}</td>
-            <td>{{ t.title }}</td>
-            <td>Ksh {{ t.amount }}</td>
-            <td>
-                <form action="{% url 'classify_transaction' t.id %}" method="POST" style="margin: 0;">
-                    {% csrf_token %}
-                    <select name="category" onchange="this.form.submit()" style="padding: 0.3rem; border-radius: 4px; border: 1px solid #ccc;">
-                        {% for cat in categories %}
-                            <option value="{{ cat.id }}" {% if t.category == cat %}selected{% endif %}>{{ cat.name }}</option>
-                        {% endfor %}
-                    </select>
-                </form>
-            </td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-            <a href="{% url 'export_csv' %}" class="btn-secondary" style="display: inline-block; padding: 0.5rem 1rem; background-color: #28a745; color: white; text-decoration: none; border-radius: 4px; margin-bottom: 1rem;">
-    Export Transactions (CSV)
-</a>
- 
+    <!-- Summary Cards -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+        <div style="background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <h4 style="margin: 0; color: #666;">Total Income</h4>
+            <p style="font-size: 1.5rem; font-weight: bold; color: #10b981; margin: 0.5rem 0 0 0;">Ksh {{ total_income }}</p>
+        </div>
+        <div style="background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <h4 style="margin: 0; color: #666;">Total Expenses</h4>
+            <p style="font-size: 1.5rem; font-weight: bold; color: #ef4444; margin: 0.5rem 0 0 0;">Ksh {{ total_expense }}</p>
+        </div>
+        <div style="background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <h4 style="margin: 0; color: #666;">Net Balance</h4>
+            <p style="font-size: 1.5rem; font-weight: bold; color: #3b82f6; margin: 0.5rem 0 0 0;">Ksh {{ balance }}</p>
+        </div>
+    </div>
 
-    <!-- Chart.js Data Payloads -->
-    {{ chart_labels|json_script:"chart-labels-json" }}
-    {{ chart_data|json_script:"chart-data-json" }}
+    <!-- Visual Chart Section -->
+    <div style="background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 2rem;">
+        <canvas id="expenseChart" style="max-height: 300px;"></canvas>
+    </div>
 
-    <!-- Chart.js Script Execution -->
-    <script>
-        const chartLabels = JSON.parse(document.getElementById('chart-labels-json').textContent);
-        const chartData = JSON.parse(document.getElementById('chart-data-json').textContent);
+    <!-- Quick Action Links -->
+    <div style="margin-bottom: 1.5rem; display: flex; flex-wrap: wrap; gap: 1rem;">
+        <a href="{% url 'add_expense' %}" style="padding: 0.5rem 1rem; background: #007bff; color: white; text-decoration: none; border-radius: 4px;">+ Add Transaction</a>
+        <a href="{% url 'manual_sms_sync' %}" style="padding: 0.5rem 1rem; background: #6c757d; color: white; text-decoration: none; border-radius: 4px;">Paste M-Pesa SMS</a>
+        <a href="{% url 'upload_statement' %}" style="padding: 0.5rem 1rem; background: #17a2b8; color: white; text-decoration: none; border-radius: 4px;">Upload Statement</a>
+        <a href="{% url 'export_csv' %}" style="padding: 0.5rem 1rem; background: #28a745; color: white; text-decoration: none; border-radius: 4px;">Export CSV</a>
+    </div>
 
-        const ctx = document.getElementById('expenseChart').getContext('2d');
-        new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: chartLabels,
-                datasets: [{
-                    data: chartData,
-                    backgroundColor: ['#dc3545', '#fd7e14', '#ffc107', '#6f42c1', '#20c997', '#007bff'],
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                responsive: true,
-                plugins: {
-                    legend: { position: 'bottom' }
+    <!-- Transactions Table -->
+    <h3 style="margin-top: 2rem;">Transactions</h3>
+    <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+        <thead>
+            <tr style="background: #f8f9fa; text-align: left;">
+                <th style="padding: 10px;">Date</th>
+                <th style="padding: 10px;">Description / Title</th>
+                <th style="padding: 10px;">Amount</th>
+                <th style="padding: 10px;">Category (Classify)</th>
+                <th style="padding: 10px;">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for t in transactions %}
+            <tr style="border-top: 1px solid #eee;">
+                <td style="padding: 10px;">{{ t.date }}</td>
+                <td style="padding: 10px;">{{ t.title }}</td>
+                <td style="padding: 10px;">Ksh {{ t.amount }}</td>
+                <td style="padding: 10px;">
+                    <form action="{% url 'classify_transaction' t.id %}" method="POST" style="margin: 0;">
+                        {% csrf_token %}
+                        <select name="category" onchange="this.form.submit()" style="padding: 0.3rem; border-radius: 4px; border: 1px solid #ccc;" aria-label="Select category">
+                            <option value="" {% if not t.category %}selected{% endif %}>Uncategorized</option>
+                            {% for cat in categories %}
+                                <option value="{{ cat.id }}" {% if t.category == cat %}selected{% endif %}>{{ cat.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </form>
+                </td>
+                <td style="padding: 10px;">
+                    <a href="{% url 'edit_expense' t.id %}" style="color: #007bff; text-decoration: none; margin-right: 10px;">Edit</a>
+                    <a href="{% url 'delete_transaction' t.id %}" style="color: #ef4444; text-decoration: none;">Delete</a>
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="5" style="text-align: center; padding: 20px; color: #666;">No transactions found for this month.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Chart.js Script CDN & Initialization -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    const ctx = document.getElementById('expenseChart').getContext('2d');
+    const expenseChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: {{ chart_labels|safe }},
+            datasets: [{
+                label: 'Amount (Ksh)',
+                data: {{ chart_data|safe }},
+                backgroundColor: [
+                    '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#64748b'
+                ],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                },
+                title: {
+                    display: true,
+                    text: 'Spending Breakdown by Category'
                 }
+
             }
-        });
-    </script>
+        }
+    });
+</script>
 {% endblock %}

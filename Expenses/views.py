@@ -2,7 +2,7 @@ import datetime
 import re
 from datetime import date
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny # We use AllowAny because Tasker won't have a Django session
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from django.contrib.auth.models import User
 from django.contrib.auth.forms import UserCreationForm
@@ -10,15 +10,14 @@ from django.contrib.auth import login
 from django.shortcuts import get_object_or_404, render, redirect
 from django.db.models import Sum
 from django.contrib.auth.decorators import login_required
+from django.views.decorators.csrf import csrf_exempt
 from .models import Transaction, Category
 from .forms import TransactionForm
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.contrib.auth.decorators import login_required
-from django.shortcuts import render, redirect
+from django.http import JsonResponse, HttpResponse
 import json
 from .utils import parse_mpesa_sms
 import os
+import csv
 
 @login_required
 def manual_sms_sync(request):
@@ -39,9 +38,7 @@ def api_mpesa_sync(request):
         try:
             data = json.loads(request.body)
             sms_text = data.get('sms', '')
-            # For API webhooks, assign to a default system user or extract via token
-            from django.contrib.auth.models import User
-            user = User.objects.first() # Adjust based on your auth strategy
+            user = User.objects.first() 
             
             success, msg = parse_mpesa_sms(sms_text, user)
             if success:
@@ -62,10 +59,6 @@ def register(request):
     else:
         form = UserCreationForm()
     return render(request, 'expenses/register.html', {'form': form})
-
-@login_required
-def redirect():
-    raise NotImplementedError
 
 @login_required
 def add_expense(request):
@@ -105,9 +98,6 @@ def delete_transaction(request, transaction_id):
     if request.method == 'POST':
         transaction.delete()
         return redirect('dashboard')
-    context = {
-        'transaction': transaction,
-    }
     return render(request, 'expenses/delete_expense.html', {'transaction': transaction})
 
 @login_required
@@ -121,11 +111,11 @@ def dashboard(request):
             return redirect('dashboard')
     else:
         form = TransactionForm()
-#To determine the current month and year, we can use the datetime module. We can also allow users to filter transactions by month using a query parameter in the URL. If a month is selected, we will parse it and use it to filter the transactions. If no month is selected, we will default to the current month.
+
     today = datetime.date.today()
     year = today.year
     month = today.month
-#To allow users to filter transactions by month, we can check if a 'month' query parameter is present in the request. If it is, we will parse it and use it to filter the transactions. If not, we will default to the current month.
+
     selected_month = request.GET.get('month')
     if selected_month:
         try:
@@ -134,37 +124,46 @@ def dashboard(request):
             month = int(month_str)
         except ValueError:
             pass
-    #To ensure that the month is always in the format YYYY-MM, we can use an f-string to format the year and month as a string with leading zeros for the month if necessary.
+
     current_month_value = f"{year}-{month:02d}"
-#To retrieve the transactions for the current user and the selected month, we can use the Django ORM to filter the Transaction model by user and date. We will also order the transactions by date in descending order.
+
     transactions = Transaction.objects.filter(
         user=request.user,
         date__year=year,
         date__month=month
-        ).order_by('-date')
+    ).order_by('-date')
+
+    # Fetch all categories for the dashboard inline dropdown selection table
+    categories = Category.objects.all()
+
     total_income = (
-        transactions.filter(category__is_income=True).aggregate(Sum('amount'))['amount__sum'] or 0)
+        transactions.filter(category__is_income=True).aggregate(Sum('amount'))['amount__sum'] or 0
+    )
+    
     total_expense_by_category = (
         transactions.filter(category__is_income=False)
         .values('category__name')
         .annotate(total=Sum('amount'))
         .order_by('-total')
     )
+    
     total_expense = sum(item['total'] for item in total_expense_by_category)
     balance = total_income - total_expense
 
-    #Extract labels and values for the chart from the expense breakdown queryset. We will use a list comprehension to extract the category names and total amounts from the queryset and store them in separate lists.
+    # Extract labels and values for the Chart.js doughnut chart
     chart_labels = [item['category__name'] for item in total_expense_by_category]
     chart_data = [float(item['total']) for item in total_expense_by_category]
 
     context = {
         'form': form,
         'transactions': transactions,
+        'categories': categories,
         'total_income': total_income,
         'total_expense': total_expense,
         'balance': balance,
         'chart_labels': chart_labels,
         'chart_data': chart_data,
+        'current_month_value': current_month_value,
     }
     return render(request, 'expenses/dashboard.html', context)
 
@@ -173,10 +172,8 @@ def export_transactions_csv(request):
     response['Content-Disposition'] = 'attachment; filename="transactions_report.csv"'
     
     writer = csv.writer(response)
-    # Write header row
     writer.writerow(['ID', 'Title', 'Amount', 'Category', 'Date', 'Description'])
     
-    # Fetch logged-in user's transactions optimized with select_related
     transactions = Transaction.objects.filter(user=request.user).select_related('category')
     for t in transactions:
         writer.writerow([
@@ -187,6 +184,7 @@ def export_transactions_csv(request):
             t.date, 
             t.description
         ])
+    return response
 
 @login_required
 def upload_mpesa_statement(request):
@@ -195,12 +193,10 @@ def upload_mpesa_statement(request):
         decoded_file = csv_file.read().decode('utf-8').splitlines()
         reader = csv.reader(decoded_file)
         
-        # Default fallback category for newly imported rows
         default_cat, _ = Category.objects.get_or_create(name='Uncategorized')
         
         for row in reader:
             try:
-                # Adjust column indices based on Safaricom's standard CSV statement format
                 date_str = row[0]
                 details = row[1]
                 withdrawn = row[3] if row[3] else 0.0
@@ -212,11 +208,11 @@ def upload_mpesa_statement(request):
                     user=request.user,
                     title=details[:100],
                     amount=amount,
-                    date=datetime.strptime(date_str.split()[0], '%Y-%m-%d').date(),
+                    date=datetime.datetime.strptime(date_str.split()[0], '%Y-%m-%d').date(),
                     defaults={'category': default_cat, 'description': details}
                 )
             except (ValueError, IndexError):
-                continue # Skip header rows or malformed rows safely
+                continue
                 
         return redirect('dashboard')
         
@@ -235,54 +231,37 @@ def update_transaction_category(request, transaction_id):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def mpesa_webhook(request):
-    # 1. Get the raw text from the POST request body
     sms_text = request.data.get('sms', '')
-    
-    # We need a user to assign the transaction to. 
-    # For a personal app, we can just grab the first admin user.
     user = User.objects.first()
     
     if not sms_text or not user:
         return Response({"error": "No SMS text provided or no user exists."}, status=400)
 
-    # 2. Use Regex to extract Safaricom transaction data
-    # Example SMS: "QA45G7H8 paid to NAIVAS SUPERMARKET Ksh 4,500.00 on 23/07/26 at 3:14 PM..."
-    
-    # Look for "Ksh" followed by an optional space, numbers, and commas
     amount_match = re.search(r'Ksh\s*([\d,]+(?:\.\d{2})?)', sms_text)
     
-    # Determine transaction type and title based on Safaricom keywords
     if "paid to" in sms_text or "bought airtime" in sms_text:
         is_expense = True
-        # Extract who it was paid to
         title_match = re.search(r'paid to (.*?) Ksh', sms_text)
         title = title_match.group(1).strip() if title_match else "M-Pesa Expense"
-        
     elif "received Ksh" in sms_text:
         is_expense = False
         title_match = re.search(r'from (.*?) on', sms_text)
         title = title_match.group(1).strip() if title_match else "M-Pesa Income"
-        
     else:
-        # If the regex fails to match a known pattern, log it as unknown but save the text
         is_expense = True
         title = "Unknown M-Pesa Trx"
 
-    # 3. Clean up the extracted data
     amount = 0.00
     if amount_match:
-        # Remove commas from the amount (e.g. 4,500.00 -> 4500.00)
         amount_str = amount_match.group(1).replace(',', '')
         amount = float(amount_str)
 
-    # 4. Find or create a default category so the database doesn't crash
     category_name = "M-Pesa"
     category, created = Category.objects.get_or_create(
         name=category_name, 
         defaults={'is_income': not is_expense}
     )
 
-    # 5. Save the transaction to the database
     Transaction.objects.create(
         user=user,
         title=title,
