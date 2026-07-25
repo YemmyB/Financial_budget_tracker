@@ -40,42 +40,38 @@
 
     <!-- 4. Transactions Table -->
     <table>
-        <thead>
-            <tr>
-                <th>Date</th>
-                <th>Title</th>
-                <th>Category</th>
-                <th>Amount</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for transaction in transactions %}
-            <tr>
-                <td>{{ transaction.date }}</td>
-                <td>{{ transaction.title }}</td>
-                <td>{{ transaction.category.name }}</td>
-                <td>
-                    {% if transaction.category.is_income %}
-                        <strong class="text-green">+${{ transaction.amount }}</strong>
-                    {% else %}
-                        <strong class="text-red">-${{ transaction.amount }}</strong>
-                    {% endif %}
-                </td>
-                <td>
-                    <a href="{% url 'edit_expense' transaction.id %}" class="btn-warning">Edit</a>
-                    <a href="{% url 'delete_expense' transaction.id %}" class="btn-danger">Delete</a>
-                </td>
-            </tr>
-            {% empty %}
-            <tr>
-                <td colspan="5" style="text-align: center; color: #6c757d; padding: 2rem;">
-                    No transactions found for this period.
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <thead>
+        <tr>
+            <th>Date</th>
+            <th>Description / Title</th>
+            <th>Amount</th>
+            <th>Category (Select to Classify)</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for t in transactions %}
+        <tr>
+            <td>{{ t.date }}</td>
+            <td>{{ t.title }}</td>
+            <td>Ksh {{ t.amount }}</td>
+            <td>
+                <form action="{% url 'classify_transaction' t.id %}" method="POST" style="margin: 0;">
+                    {% csrf_token %}
+                    <select name="category" onchange="this.form.submit()" style="padding: 0.3rem; border-radius: 4px; border: 1px solid #ccc;">
+                        {% for cat in categories %}
+                            <option value="{{ cat.id }}" {% if t.category == cat %}selected{% endif %}>{{ cat.name }}</option>
+                        {% endfor %}
+                    </select>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+            <a href="{% url 'export_csv' %}" class="btn-secondary" style="display: inline-block; padding: 0.5rem 1rem; background-color: #28a745; color: white; text-decoration: none; border-radius: 4px; margin-bottom: 1rem;">
+    Export Transactions (CSV)
+</a>
+ 
 
     <!-- Chart.js Data Payloads -->
     {{ chart_labels|json_script:"chart-labels-json" }}

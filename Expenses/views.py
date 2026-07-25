@@ -18,6 +18,7 @@ from django.contrib.auth.decorators import login_required
 from django.shortcuts import render, redirect
 import json
 from .utils import parse_mpesa_sms
+import os
 
 @login_required
 def manual_sms_sync(request):
@@ -166,6 +167,70 @@ def dashboard(request):
         'chart_data': chart_data,
     }
     return render(request, 'expenses/dashboard.html', context)
+
+def export_transactions_csv(request):
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="transactions_report.csv"'
+    
+    writer = csv.writer(response)
+    # Write header row
+    writer.writerow(['ID', 'Title', 'Amount', 'Category', 'Date', 'Description'])
+    
+    # Fetch logged-in user's transactions optimized with select_related
+    transactions = Transaction.objects.filter(user=request.user).select_related('category')
+    for t in transactions:
+        writer.writerow([
+            t.id, 
+            t.title, 
+            t.amount, 
+            t.category.name if t.category else '', 
+            t.date, 
+            t.description
+        ])
+
+@login_required
+def upload_mpesa_statement(request):
+    if request.method == 'POST' and request.FILES.get('statement_file'):
+        csv_file = request.FILES['statement_file']
+        decoded_file = csv_file.read().decode('utf-8').splitlines()
+        reader = csv.reader(decoded_file)
+        
+        # Default fallback category for newly imported rows
+        default_cat, _ = Category.objects.get_or_create(name='Uncategorized')
+        
+        for row in reader:
+            try:
+                # Adjust column indices based on Safaricom's standard CSV statement format
+                date_str = row[0]
+                details = row[1]
+                withdrawn = row[3] if row[3] else 0.0
+                paid_in = row[2] if row[2] else 0.0
+                
+                amount = float(str(withdrawn).replace(',', '')) if float(str(withdrawn or 0).replace(',', '')) > 0 else float(str(paid_in or 0).replace(',', ''))
+                
+                Transaction.objects.get_or_create(
+                    user=request.user,
+                    title=details[:100],
+                    amount=amount,
+                    date=datetime.strptime(date_str.split()[0], '%Y-%m-%d').date(),
+                    defaults={'category': default_cat, 'description': details}
+                )
+            except (ValueError, IndexError):
+                continue # Skip header rows or malformed rows safely
+                
+        return redirect('dashboard')
+        
+    return render(request, 'expenses/upload_statement.html')
+
+@login_required
+def update_transaction_category(request, transaction_id):
+    transaction = get_object_or_404(Transaction, id=transaction_id, user=request.user)
+    if request.method == 'POST':
+        category_id = request.POST.get('category')
+        if category_id:
+            transaction.category_id = category_id
+            transaction.save()
+    return redirect('dashboard')
 
 @api_view(['POST'])
 @permission_classes([AllowAny])

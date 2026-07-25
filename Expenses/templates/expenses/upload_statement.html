@@ -1,0 +1,17 @@
+{% extends 'expenses/base.html' %}
+{% block content %}
+<div style="max-width: 500px; margin: 3rem auto;" class="form-section">
+    <h2>Upload M-Pesa Statement</h2>
+    <p style="color: #6c757d; font-size: 0.9rem; margin-bottom: 1.5rem;">
+        Export your statement as a CSV file from your email or Safaricom portal and upload it here to import your history.
+    </p>
+    <form method="POST" enctype="multipart/form-data">
+        {% csrf_token %}
+        <div style="margin-bottom: 1rem;">
+            <input type="file" name="statement_file" accept=".csv" required style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;">
+        </div>
+        <button type="submit" class="btn-primary">Upload and Parse</button>
+    </form>
+    <p style="text-align: center; margin-top: 1.5rem;"><a href="{% url 'dashboard' %}">Back to Dashboard</a></p>
+</div>
+{% endblock %}

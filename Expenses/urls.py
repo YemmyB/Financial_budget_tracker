@@ -12,4 +12,7 @@ urlpatterns = [
     path('api/mpesa-sync/', views.mpesa_webhook, name='mpesa_webhook'),
     path('sync-sms/', views.manual_sms_sync, name='manual_sms_sync'),
     path('api/mpesa-sync/', views.api_mpesa_sync, name='api_mpesa_sync'),
+    path('export/csv/', views.export_transactions_csv, name='export_csv'),
+    path('transaction/classify/<int:transaction_id>/', views.update_transaction_category, name='classify_transaction'),
+path('upload-statement/', views.upload_mpesa_statement, name='upload_statement'),
 ]
