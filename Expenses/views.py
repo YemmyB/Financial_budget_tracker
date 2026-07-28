@@ -16,6 +16,7 @@ from .forms import TransactionForm
 from django.http import JsonResponse, HttpResponse
 import json
 from .utils import parse_mpesa_sms
+import pypdf
 import os
 import csv
 
@@ -187,35 +188,81 @@ def export_transactions_csv(request):
     return response
 
 @login_required
+@login_required
 def upload_mpesa_statement(request):
     if request.method == 'POST' and request.FILES.get('statement_file'):
-        csv_file = request.FILES['statement_file']
-        decoded_file = csv_file.read().decode('utf-8').splitlines()
-        reader = csv.reader(decoded_file)
-        
+        uploaded_file = request.FILES['statement_file']
+        file_pin = request.POST.get('pin', '').strip()
         default_cat, _ = Category.objects.get_or_create(name='Uncategorized')
-        
-        for row in reader:
+
+        # --- 1. HANDLE PDF UPLOADS ---
+        if uploaded_file.name.endswith('.pdf'):
             try:
-                date_str = row[0]
-                details = row[1]
-                withdrawn = row[3] if row[3] else 0.0
-                paid_in = row[2] if row[2] else 0.0
+                reader = pypdf.PdfReader(uploaded_file)
                 
-                amount = float(str(withdrawn).replace(',', '')) if float(str(withdrawn or 0).replace(',', '')) > 0 else float(str(paid_in or 0).replace(',', ''))
+                # Check if PDF is encrypted and unlock it
+                if reader.is_encrypted:
+                    if not reader.decrypt(file_pin):
+                        return render(request, 'expenses/upload_statement.html', {
+                            'error': 'Incorrect PIN/Password for this PDF file.'
+                        })
+
+                # Extract text from unlocked PDF
+                extracted_text = ""
+                for page in reader.pages:
+                    extracted_text += page.extract_text() + "\n"
+
+                # Standard regex to find M-Pesa PDF rows (Date, Details, Status, Amount)
+                # Safaricom PDFs normally follow a pattern, e.g.: "2023-05-12 10:15:20 Paid To ... Completed 500.00 ..."
+                # Note: You may need to tweak this regex slightly depending on the exact text layout
+                transaction_pattern = re.compile(r'(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})\s+(.*?)\s+Completed\s+([\d,\.]+)')
                 
-                Transaction.objects.get_or_create(
-                    user=request.user,
-                    title=details[:100],
-                    amount=amount,
-                    date=datetime.datetime.strptime(date_str.split()[0], '%Y-%m-%d').date(),
-                    defaults={'category': default_cat, 'description': details}
-                )
-            except (ValueError, IndexError):
-                continue
+                matches = transaction_pattern.findall(extracted_text)
+                for match in matches:
+                    date_str, details, amount_str = match
+                    amount = float(amount_str.replace(',', ''))
+                    
+                    Transaction.objects.get_or_create(
+                        user=request.user,
+                        title=details[:100].strip(),
+                        amount=amount,
+                        date=datetime.datetime.strptime(date_str.split()[0], '%Y-%m-%d').date(),
+                        defaults={'category': default_cat, 'description': details}
+                    )
+                return redirect('dashboard')
+
+            except Exception as e:
+                return render(request, 'expenses/upload_statement.html', {'error': f'Failed to process PDF: {str(e)}'})
+
+        # --- 2. HANDLE CSV UPLOADS ---
+        elif uploaded_file.name.endswith('.csv'):
+            try:
+                decoded_file = uploaded_file.read().decode('utf-8').splitlines()
+                reader = csv.reader(decoded_file)
                 
-        return redirect('dashboard')
-        
+                for row in reader:
+                    try:
+                        date_str = row[0]
+                        details = row[1]
+                        withdrawn = row[3] if len(row) > 3 and row[3] else 0.0
+                        paid_in = row[2] if len(row) > 2 and row[2] else 0.0
+                        
+                        raw_amount = withdrawn if float(str(withdrawn or 0).replace(',', '')) > 0 else paid_in
+                        amount = float(str(raw_amount).replace(',', ''))
+                        
+                        Transaction.objects.get_or_create(
+                            user=request.user,
+                            title=details[:100],
+                            amount=amount,
+                            date=datetime.datetime.strptime(date_str.split()[0], '%Y-%m-%d').date(),
+                            defaults={'category': default_cat, 'description': details}
+                        )
+                    except (ValueError, IndexError):
+                        continue # Skip header rows
+                return redirect('dashboard')
+            except Exception as e:
+                return render(request, 'expenses/upload_statement.html', {'error': f'Failed to process CSV: {str(e)}'})
+
     return render(request, 'expenses/upload_statement.html')
 
 @login_required

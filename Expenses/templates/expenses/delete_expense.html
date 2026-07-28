@@ -3,7 +3,7 @@
 {% block content %}
 <div style="max-width: 450px; margin: 4rem auto; text-align: center;" class="form-section">
     <h2>Confirm Deletion</h2>
-    <p style="margin: 1.5rem 0;">Are you sure you want to delete <strong>"{{ transaction.title }}"</strong> (${{ transaction.amount }})?</p>
+    <p style="margin: 1.5rem 0;">Are you sure you want to delete <strong>"{{ transaction.title }}"</strong> (ksh{{ transaction.amount }})?</p>
     
     <form method="POST">
         {% csrf_token %}
